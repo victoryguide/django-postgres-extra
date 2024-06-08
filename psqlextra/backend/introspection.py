@@ -151,6 +151,8 @@ class PostgresIntrospection(Introspection):
                 pg_description.objoid = child.oid
             WHERE
                 parent.relname = %s
+                AND parent.relnamespace::regnamespace::text = ANY(CURRENT_SCHEMAS(true))
+                AND child.relnamespace::regnamespace::text = ANY(CURRENT_SCHEMAS(true))
         """
 
         cursor.execute(sql, (table_name,))
@@ -196,6 +198,7 @@ class PostgresIntrospection(Introspection):
                 AND ordinal_position = pt.column_index
             WHERE
                 table_name = %s
+                AND par.relnamespace::regnamespace::text = ANY(CURRENT_SCHEMAS(true))
         """
 
         cursor.execute(sql, (table_name,))
@@ -226,14 +229,21 @@ class PostgresIntrospection(Introspection):
         Also retrieve the definition of expression-based indexes.
         """
 
+        sql = """
+            SELECT
+                indexname, indexdef
+            FROM
+                pg_indexes
+            WHERE
+                tablename = %s
+                AND schemaname = ANY(CURRENT_SCHEMAS(true))
+        """
+
         constraints = super().get_constraints(cursor, table_name)
 
         # standard Django implementation does not return the definition
         # for indexes, only for constraints, let's patch that up
-        cursor.execute(
-            "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = %s",
-            (table_name,),
-        )
+        cursor.execute(sql, (table_name,))
         for index_name, definition in cursor.fetchall():
             # PostgreSQL 13 or older won't give a definition if the
             # index is actually a primary key.
